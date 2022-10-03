@@ -261,5 +261,3 @@ class ddc_gt:
         
         fig.savefig(path)
         print("Figure saved to \"{:}\".".format(path))
-
-c1=ddc_gt()
