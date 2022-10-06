@@ -6,58 +6,74 @@ import ast
 import pickle
 
 import matplotlib.pyplot as plt
-from rdkit import Chem, DataStructs, RDKFingerprint
-import ddc_v3 as ddc
+from rdkit import Chem, DataStructs
+from rdkit.Chem import RDKFingerprint
+try:
+    from ddc_pub import ddc_v3 as ddc
+    import ddc_v3 as ddc
+except Exception:
+    pass
 
 class ddc_gt:
-    def __init__(self, target_names:list=[], show_errors:bool=False) -> None:
+    def __init__(self, target_names:list=[], show_errors:bool=False, conditions:list=[]) -> None:
         '''
-        The combination of DDC trainer and generator, providing with an easier way to use DDC
+        DDC训练器和生成器的结合体, 便于数据互通
 
         :param target_names: List of target names
         :type target_names: list, optional
         :param show_errors: Whether to show error messages in some cases
         :type show_errors: bool, optional
+        :param conditions: 生成条件, 需要生成时再填
+        :type conditions: list or np.array, optional
         '''
         self.__data = None
+        self.__model = None
         self.__conditions = None
         self.__target_names = target_names
         self.__show_errors = show_errors
+        if conditions != []:
+            self.__conditions = np.asarray(conditions)
     
     @property
-    def target_names(self): 'List of target names'; return self.__target_names
+    def target_names(self): '生成条件的标题'; return self.__target_names
 
     @property
-    def sani_properties(self): 'Properties of generated mols'; return self.__sani_properties
+    def sani_mols(self): '生成的分子'; return self.__sani_mols
 
-    @property.setter
-    def sani_properties(self, value:list=[]):
+    @property
+    def sani_properties(self): '生成分子的描述符(二维list格式)'; return self.__sani_properties
+
+    @property
+    def sani_data(self): '生成数据的DataFrame'; return self.__data
+    
+    @property
+    def model(self): '当前ddc.DDC模型'; return self.__model
+
+    @property
+    def conditions(self): '生成条件'; return self.__conditions
+
+    @conditions.setter
+    def conditions(self, value):
+        self.__conditions = np.asarray(value)
+
+    def set_properties(self, value):
         '''
-        Set the properties of generated mols
-        Note: this will not replace the whole properties list, but will append the values passed
+        设置以生成的分子的性质, 便于绘图等用途
+        
+        :param value: 二维数组, 要传入的分子性质
+        :type value: list
         '''
         assert len(value) == len(self.__sani_properties), "Length not match"
-        for idx,property in enumerate(self.__sani_properties):
-            property.append(value[idx])
+        
+        for idx,sani_property in enumerate(self.__sani_properties):
+            for column in value[idx]:
+                sani_property.append(column)
+            #sani_property = sani_property + list(value[idx])
         self.__data = pd.DataFrame(data=self.__sani_properties, columns=['mol', 'smiles']+self.__target_names)
-
-    @property
-    def sani_data(self): 'Generated mols with descrs'; return self.__data
-    
-    @property
-    def model(self): 'The DDC model'; return self.__model
-
-    @property
-    def conditions(self): 'Conditions for generating'; return self.__conditions
-
-    @property.setter
-    def conditions(self, value):
-        'Set the conditions for generating'
-        self.__conditions = np.asarray(value)
 
     def init_model(self, x, y, dataset_info=None, scaling=True, noise_std=0.1, lstm_dim=512, dec_layers=3, batch_size=128):
         '''
-        Initialize a new ddc model
+        新建模型
 
         :param x: Encoder input
         :type x: list or numpy.ndarray
@@ -92,21 +108,33 @@ class ddc_gt:
     
     def load_model(self, model_name):
         '''
-        Load existing model for generating
+        加载现有模型用于生成
 
-        :param model_name: The path of existing model or the DDC model itself
+        :param model_name: 路径或ddc.DDC对象
         :type model_name: str or ddc.DDC
         '''
-        
         if type(model_name) == str:
             self.__model = ddc.DDC(model_name = model_name)
         else:
             self.__model = model_name
     
-    def fit(self, epochs=300, lr=1e-3, mini_epochs=10, save_period=50, lr_delay=True, sch_epoch_to_start=500, lr_init=1e-3, lr_final=1e-6, patience=25):
+    def save_model(self, filename:str = ""):
+        '''
+        保存模型
+
+        :param filename: 保存路径
+        :type filename: str
+        '''
+        print("Saving model.")
+        self.__model.save(filename)
+
+    def fit(self, model_name:str="New model", 
+    epochs=300, lr=1e-3, mini_epochs=10, save_period=50, lr_delay=True, sch_epoch_to_start=500, lr_init=1e-3, lr_final=1e-6, patience=25):
         """
-        Fit the full model to the training data.
+        使用新建模型时输入的数据训练模型
         
+        :param model_name: 模型名称, 用于保存训练历史
+        :type model_name: str, optional
         :param epochs: Training iterations over complete training set.
         :type epochs: int
         :param lr: Initial learning rate
@@ -129,24 +157,24 @@ class ddc_gt:
         assert type(self.__model) == ddc.DDC, "Model to fit uninitialized."
         print("Training model.")
 
-        self.__model.fit(epochs              = epochs,                               # number of epochs
-                        lr                  = lr,                                  # initial learning rate for Adam, recommended
-                        model_name          = self.model_name,                     # base name to append the checkpoints with
-                        checkpoint_dir      = "checkpoints_"+self.model_name+"/",  # save checkpoints in the notebook's directory
-                        mini_epochs         = mini_epochs,                         # number of sub-epochs within an epoch to trigger lr decay
-                        save_period         = save_period,                         # checkpoint frequency (in mini_epochs)
-                        lr_decay            = lr_delay,                            # whether to use exponential lr decay or not
-                        sch_epoch_to_start  = sch_epoch_to_start,                  # mini-epoch to start lr decay (bypassed if lr_decay=False)
-                        sch_lr_init         = lr_init,                             # initial lr, should be equal to lr (bypassed if lr_decay=False)
-                        sch_lr_final        = lr_final,                            # final lr before finishing training (bypassed if lr_decay=False)
-                        patience            = patience)                            # patience for Keras' ReduceLROnPlateau (bypassed if lr_decay=True)
+        self.__model.fit(epochs              = epochs,        # number of epochs
+        lr                  = lr,                             # initial learning rate for Adam, recommended
+        model_name          = model_name,                     # base name to append the checkpoints with
+        checkpoint_dir      = "checkpoints_"+model_name+"/",  # save checkpoints in the notebook's directory
+        mini_epochs         = mini_epochs,                    # number of sub-epochs within an epoch to trigger lr decay
+        save_period         = save_period,                    # checkpoint frequency (in mini_epochs)
+        lr_decay            = lr_delay,                       # whether to use exponential lr decay or not
+        sch_epoch_to_start  = sch_epoch_to_start,             # mini-epoch to start lr decay (bypassed if lr_decay=False)
+        sch_lr_init         = lr_init,                        # initial lr, should be equal to lr (bypassed if lr_decay=False)
+        sch_lr_final        = lr_final,                       # final lr before finishing training (bypassed if lr_decay=False)
+        patience            = patience)                       # patience for Keras' ReduceLROnPlateau (bypassed if lr_decay=True)
 
         print("Training completed.")
     
     def retrain(self, model_name, x, y,
     epochs=300, lr=1e-3, mini_epochs=10, save_period=50, lr_delay=True, sch_epoch_to_start=500, lr_init=1e-3, lr_final=1e-6, patience=25):
         """
-        Load an existing DDC model and fit the full model to the training data.
+        从文件载入现有模型并训练之
         
         :param model_name: The path of existing model (not DDC model)
         :type model_name: str
@@ -175,10 +203,10 @@ class ddc_gt:
         """
         self.__model = ddc.DDC(x=x, y=y, model_name=model_name)
         
-        self.fit(epochs, lr, mini_epochs, save_period, lr_delay, sch_epoch_to_start, lr_init, lr_final, patience)
+        self.fit(model_name, epochs, lr, mini_epochs, save_period, lr_delay, sch_epoch_to_start, lr_init, lr_final, patience)
         print("Retrain completed.")
     
-    def generate(self, sample_times:int=4, temp:int=1, conditions:list=[], batch_input_length:int=128):
+    def generate(self, sample_times:int=4, temp:int=1, batch_input_length:int=128):
         """Generate multiple biased SMILES strings.
         If temp>0, multinomial sampling is used instead of selecting 
         the single most probable character at each step.
@@ -189,34 +217,29 @@ class ddc_gt:
         :type sample_times: int, optional
         :param temp: Temperatute of multinomial sampling (argmax if 0), defaults to 1
         :type temp: int, optional
-        :param conditions: Specific conditions for generating
-        :type conditions: list
         :param batch_input_length: The input length of batch, defaults to 128
         :type batch_input_length: int, optional
         """
-        if conditions != []:
-            self.conditions = conditions 
         target = self.__conditions
         print("Sampling with conditions:{:}.".format(target))
 
-        # Sample
+        # 从模型中取样、生成
         smiles_out = []
         self.__model.batch_input_length = batch_input_length
         for i in range(sample_times):
             smiles, _ = self.__model.predict_batch(latent=target.reshape(1, -1), temp=temp)
-            #print("#{:}:{:}".format(i,smiles))
             smiles_out.append(smiles)
         smiles_out = np.concatenate(smiles_out)
         self.__mols = [Chem.MolFromSmiles(smi) for smi in smiles_out]
 
-        # Sanitize
+        # 检查有效性并去重
         print("Checking mols.")
         self.__sani_fps = []
+        self.__sani_mols = []
         self.__sani_properties = []
         for idx,mol in enumerate(self.__mols):
             sani_mol = self.__sanitize(mol)
             if sani_mol != None:
-                #去重
                 mol_fp = RDKFingerprint(sani_mol)
                 is_dupli = False
                 for i in self.__sani_fps:
@@ -225,13 +248,16 @@ class ddc_gt:
                         is_dupli = True
                         break
                 if not is_dupli:
+                    self.__sani_mols.append(sani_mol)
                     self.__sani_fps.append(mol_fp)
-                    self.__sani_properties.append(sani_mol, smiles_out[idx])
+                    self.__sani_properties.append([sani_mol, smiles_out[idx]])
         print("Generated mols:{:}, sanitized mols:{:}, validity:{:}".format(
             len(self.__mols), len(self.__sani_properties), len(self.__sani_properties)/len(self.__mols)))
+        
+        return self.__sani_mols
 
     def __sanitize(self, mol):
-        'To check whether the mol is invalid'
+        '检查分子有效性'
         try:
             Chem.SanitizeMol(mol)
             if Chem.MolToSmiles(mol) == "":
@@ -240,24 +266,90 @@ class ddc_gt:
                 return mol
         except Exception as e:
             if self.__show_errors:
-                print(e)
+                #print(e)
+                pass
             return None
     
-    def plot(self, path:str=""):
+    def plot(self, path:str="", title:str="", sharey:bool=False):
         '''
-        Save the histogram of properties of generated results to file
+        保存生成分子性质直方图到指定文件
 
-        :param path: Path to save the image
+        :param path: 目标文件名
         :type path: str, optional
+        :param title: 设置整体标题
+        :type title: str, optional
+        :param sharey: 控制是否所有子图共享Y轴
+        :type sharey: bool, optional
         '''
         assert self.__data is not None, "Set sani_properties first before plotting"
         assert self.__conditions is not None, "Set conditions first before plotting"
         
-        fig, axs = plt.subplots(nrows=3, ncols=3, sharey=True, figsize=(8,6))
-        for idx,column in enumerate(self.__data[2:]):
-            axs[idx].hist(column, 25)
-            axs[idx].set_title(self.__target_names[idx])
-            axs[idx][0].vlines(self.__conditions[idx], colors='g', linestyles='dashed', linewidth=2)
+        target_length = len(self.__target_names)
+        fig, axs = plt.subplots(nrows=1, ncols=target_length, sharey=sharey, figsize=(target_length*2, 2))
+        for idx,target_name in enumerate(self.__target_names):
+            cdt = self.__conditions[idx]
+            subplot = axs[idx]
+
+            ax_cdt = subplot.twiny()
+            ax_cdt.hist(self.__data[target_name], 25, color='#F5B3B3')
+            ax_cdt.set_xticks([cdt])
+
+            subplot.hist(self.__data[target_name], 25, color='w')
+            subplot.set_title(target_name)
+            ax_cdt.axvline(x=cdt, color='r', linestyle='dashed')
+
+            #ax_cdt.set_xticklabels([str(cdt)])
+            #subplot.text(x=cdt, y=0, s=str(cdt), color='r')
         
+        fig.tight_layout()
+        fig.suptitle(title)
         fig.savefig(path)
         print("Figure saved to \"{:}\".".format(path))
+
+    def dump(self, filename:str = "", data = None):
+        '''
+        使用pickle导出对象
+
+        :param filename: 目标文件名
+        :type filename: str
+        :param data: 要导出的对象
+        :type data: Any
+        '''
+        with open(filename, "wb") as f:
+            pickle.dump(data, f)
+    
+    def load_data_old(self, mols_filename:str = "", properties_filename:str = ""):
+        '''
+        加载0924前导出的生成数据
+
+        :param mols_filename: 分子对应的pickle文件
+        :type mols_filename: str
+        :param properties_filename: 描述符对应的pickle文件
+        :type properties_filename: str
+        '''
+        with open(mols_filename, "rb") as f:
+            sani_mols = pickle.load(f)
+        with open(properties_filename, "rb") as f:
+            sani_properties = pickle.load(f)
+
+        assert len(sani_mols) == len(sani_properties)
+        for i in range(len(sani_mols)):
+            sani_properties[i].insert(0, '')
+            sani_properties[i].insert(0, sani_mols[i])
+
+        self.__sani_properties = sani_properties
+        self.__data = pd.DataFrame(self.__sani_properties, columns=['mol','smiles']+self.__target_names)
+        print("Loaded {} mols with properties.".format(len(self.__data))) 
+    
+    def load_data(self, properties_filename:str = ""):
+        '''
+        加载使用pickle导出的sani_properties
+
+        :param properties_filename: 要加载的pickle文件
+        :type properties_filename: str
+        '''
+        with open(properties_filename, "rb") as f:
+            self.__sani_properties = pickle.load(f)
+        self.__data = pd.DataFrame(self.__sani_properties, columns=['mol','smiles']+self.__target_names) 
+        print("Loaded {} mols with properties.".format(len(self.__data))) 
+
