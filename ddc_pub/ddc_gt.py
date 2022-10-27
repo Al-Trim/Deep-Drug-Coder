@@ -207,7 +207,8 @@ class ddc_gt:
         print("Retrain completed.")
     
     def generate(self, sample_times:int=4, temp:int=1, batch_input_length:int=128):
-        """Generate multiple biased SMILES strings.
+        """
+        根据模型生成多个rdkit mol, 并输出生成的rdkit mol, 分子总数, 有效分子数(包括重复), 重复分子数, 有效性
         If temp>0, multinomial sampling is used instead of selecting 
         the single most probable character at each step.
         If temp==1, multinomial sampling without temperature scaling is used.
@@ -219,6 +220,7 @@ class ddc_gt:
         :type temp: int, optional
         :param batch_input_length: The input length of batch, defaults to 128
         :type batch_input_length: int, optional
+        :return: tuple(5)
         """
         target = self.__conditions
         print("Sampling with conditions:{:}.".format(target))
@@ -234,9 +236,16 @@ class ddc_gt:
 
         # 检查有效性并去重
         print("Checking mols.")
+
         self.__sani_fps = []
         self.__sani_mols = []
         self.__sani_properties = []
+
+        total_count = len(self.__mols)
+        sani_count = 0
+        dup_count = 0
+        val_count = 0
+
         for idx,mol in enumerate(self.__mols):
             sani_mol = self.__sanitize(mol)
             if sani_mol != None:
@@ -246,15 +255,20 @@ class ddc_gt:
                     sani_sim = DataStructs.FingerprintSimilarity(mol_fp, i)
                     if sani_sim == 1.0:
                         is_dupli = True
+                        dup_count += 1
                         break
                 if not is_dupli:
                     self.__sani_mols.append(sani_mol)
                     self.__sani_fps.append(mol_fp)
                     self.__sani_properties.append([sani_mol, smiles_out[idx]])
-        print("Generated mols:{:}, sanitized mols:{:}, validity:{:}".format(
-            len(self.__mols), len(self.__sani_properties), len(self.__sani_properties)/len(self.__mols)))
+
+        sani_count = len(self.__sani_properties)
+        val_count = sani_count/total_count
+
+        print("Generated mols:{:}, sanitized mols(include duplicated):{:}, duplicated mols:{:}, validity:{:}".format(
+            total_count, sani_count, dup_count, val_count))
         
-        return self.__sani_mols
+        return (self.__sani_mols, total_count, sani_count, dup_count, val_count)
 
     def __sanitize(self, mol):
         '检查分子有效性'
@@ -301,8 +315,8 @@ class ddc_gt:
             #ax_cdt.set_xticklabels([str(cdt)])
             #subplot.text(x=cdt, y=0, s=str(cdt), color='r')
         
-        fig.tight_layout()
         fig.suptitle(title)
+        fig.tight_layout()
         fig.savefig(path)
         print("Figure saved to \"{:}\".".format(path))
 
