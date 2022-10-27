@@ -208,7 +208,7 @@ class ddc_gt:
     
     def generate(self, sample_times:int=4, temp:int=1, batch_input_length:int=128):
         """
-        根据模型生成多个rdkit mol, 并输出生成的rdkit mol, 分子总数, 有效分子数(包括重复), 重复分子数, 有效性
+        根据模型生成多个rdkit mol, 并输出生成的rdkit mol, 分子总数, 有效分子数(去掉重复), 重复分子数, 有效性
         If temp>0, multinomial sampling is used instead of selecting 
         the single most probable character at each step.
         If temp==1, multinomial sampling without temperature scaling is used.
