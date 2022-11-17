@@ -269,7 +269,7 @@ class ddc_gt:
         sani_count = len(self.__sani_properties)
         val_count = sani_count/total_count
 
-        print("Generated mols:{:}, sanitized mols(include duplicated):{:}, duplicated mols:{:}, validity:{:}".format(
+        print("Generated mols:{:}, sanitized mols(not include duplicated):{:}, duplicated mols:{:}, validity:{:}".format(
             total_count, sani_count, dup_count, val_count))
         
         return (self.__sani_mols, total_count, sani_count, dup_count, val_count)
