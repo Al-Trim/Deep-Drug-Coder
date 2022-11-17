@@ -43,6 +43,10 @@ class ddc_gt:
     @property
     def sani_properties(self): '生成分子的描述符(二维list格式)'; return self.__sani_properties
 
+    @sani_properties.setter
+    def sani_properties(self, value):
+        self.__sani_properties = value
+
     @property
     def sani_data(self): '生成数据的DataFrame'; return self.__data
     
