@@ -1,0 +1,5 @@
+,Round,Total mols,Valid mols without duplicate mols,Duplicate mols,Validity,Filtered mols,Filtered rate
+0,Retrain_0,1280,13,0,0.01015625,0,0.0
+1,Retrain_1,1280,169,0,0.13203125,14,0.08284023668639054
+2,Retrain_2,1280,167,0,0.13046875,13,0.07784431137724551
+3,Retrain_3,1280,472,0,0.36875,77,0.163135593220339

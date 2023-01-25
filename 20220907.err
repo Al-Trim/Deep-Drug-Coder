@@ -1,0 +1,9 @@
+WARNING:tensorflow:`period` argument is deprecated. Please use `save_freq` to specify the frequency in number of samples seen.
+Traceback (most recent call last):
+  File "cRNN_train_20220907.py", line 365, in <module>
+    generator.sample(1000//(i+1), [None]*7)
+  File "cRNN_train_20220907.py", line 128, in sample
+    smiles, _ = self.model.predict_batch(latent=self.target.reshape(1, -1), temp=1.0)
+  File "/storage/QinYY/ddc/ddc_pub/ddc_v3.py", line 1159, in predict_batch
+    latent = np.ones((self.batch_input_length, self.codelayer_dim)) * latent
+ValueError: operands could not be broadcast together with shapes (256,7) (1,0) 
